@@ -1,6 +1,3 @@
-
----
-
 # A Comparative Study of Sub-Sampling Designs: Case-Cohort vs. Naive and Probabilistic End-Point Sampling
 
 ## 📚 프로젝트 개요  
