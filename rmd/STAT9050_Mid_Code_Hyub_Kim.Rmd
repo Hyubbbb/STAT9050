@@ -120,50 +120,56 @@ se_estimates <- matrix(NA, nrow = num_simulations, ncol = 3)
 
 
 ```{r}
-# 100번 반복하여 Cox 모델 적합 및 추정값과 표준 오차 저장
+# Simulation loop
 for (i in 1:num_simulations) {
-  # Step ii: u ~ uniform(0, 1) 생성
+  # Generate u
   u <- runif(n, min = 0, max = 1)
   
-  # Step iv: T 생성
+  # Calculate lambda_t and generate T
+  lambda_t <- exp(beta1 * Z1 + beta2 * W1 + beta3 * W2)
   T <- (-log(1 - u) / (lambda_t * rho))^(1 / gamma)
   
-  # 데이터 프레임 생성
+  # Create data frame
   data <- data.frame(T = T, Z1 = Z1, W1 = W1, W2 = W2)
   
-  # Cox 모델 적합
+  # Fit Cox model
   cox_model <- coxph(Surv(T) ~ Z1 + W1 + W2, data = data)
   
-  # 추정값과 표준 오차 저장
+  # Store estimates and SEs
   beta_estimates[i, ] <- cox_model$coefficients
   se_estimates[i, ] <- sqrt(diag(vcov(cox_model)))
 }
 
-# 각 추정값의 표본 평균과 표본 표준편차 계산
+# Calculate means and standard deviations
 beta_means <- colMeans(beta_estimates)
-se_means <- colMeans(se_estimates)
 beta_sds <- apply(beta_estimates, 2, sd)
+se_means <- colMeans(se_estimates)
 se_sds <- apply(se_estimates, 2, sd)
 
-# 결과 출력
-cat("100회 반복에 대한 추정 결과:\n")
-cat("베타 추정값의 표본 평균: ", beta_means, "\n")
-cat("베타 추정값의 표본 표준편차: ", beta_sds, "\n")
-cat("표준 오차의 표본 평균: ", se_means, "\n")
-cat("표준 오차의 표본 표준편차: ", se_sds, "\n")
+# Present results as a data frame
+results <- data.frame(
+  Parameter = c("Beta1", "Beta2", "Beta3"),
+  Mean_Estimate = beta_means,
+  SD_Estimate = beta_sds,
+  Mean_SE = se_means,
+  SD_SE = se_sds
+)
+
+print("100회 반복 시뮬레이션 결과:")
+print(results)
 ```
 
 #### 결과 해석
 1. 베타 추정값의 표본 평균
-- $\beta_1$의 추정값 표본 평균: 0.6931639 $\approx \log(2)$
-- $\beta_2$의 추정값 표본 평균: 0.6933708 $\approx \log(2)$
-- $\beta_3$의 추정값 표본 평균: −1.001591 $\approx -1$
+- $\beta_1$의 추정값 표본 평균: 0.6931428	 $\approx \log(2)$
+- $\beta_2$의 추정값 표본 평균: 0.6940455 $\approx \log(2)$
+- $\beta_3$의 추정값 표본 평균: −0.9991584 $\approx -1$
 - 모든 계수가 실제값에 근접하므로, 모델이 잘 추정되고 있음을 확인
 
 2. 베타 추정값의 표본 표준편차
-- $\beta_1$의 추정값 표본 표준편차: 0.007137426 
-- $\beta_2$의 추정값 표본 표준편차: 0.00634256 
-- $\beta_3$의 추정값 표본 표준편차: 0.01251695 
+- $\beta_1$의 추정값 표본 표준편차: 0.007425564 
+- $\beta_2$의 추정값 표본 표준편차: 0.006778623 
+- $\beta_3$의 추정값 표본 표준편차: 0.012908413 
 - 표본 표준편차가 크지 않으므로, 추정값의 변동성이 크지 않음을 의미
 
 3. 표준 오차의 표본 평균, 표본 표준편차
@@ -190,38 +196,65 @@ u_large <- runif(n_large, 0, 1)
 T_large <- (-log(1 - u_large) / (lambda_t_large * rho))^(1 / gamma)
 
 # Function to find lambda_C for a desired censoring rate with a large sample
-find_lambda_c_large <- function(censor_rate_target, T_large, max_iter = 100, tol = 1e-3) {
+find_lambda_c_large <- function(censor_rate_target, T_large, max_iter = 200, tol = 1e-3) {
   lambda_c <- 1  # Initial guess
+  iter_count <- 0  # To track iterations
   for (i in 1:max_iter) {
-    C_large <- rexp(n_large, rate = lambda_c)  # Generate large C sample
+    C_large <- rexp(length(T_large), rate = lambda_c)  # Generate large C sample
     censor_rate <- mean(C_large < T_large)
+    iter_count <- iter_count + 1
     if (abs(censor_rate - censor_rate_target) < tol) break
     lambda_c <- lambda_c * (censor_rate_target / censor_rate)
   }
-  return(lambda_c)
+  return(list(lambda_c = lambda_c, iterations = iter_count))
 }
 
 # Desired censoring rates
 censoring_rates <- c(0.10, 0.30, 0.90, 0.95, 0.99)
 
 # Find lambda_C for each censoring rate using the large sample
-lambda_c_values_large <- sapply(censoring_rates, find_lambda_c_large, T_large = T_large)
+results <- lapply(censoring_rates, function(rate) {
+  find_lambda_c_large(censor_rate_target = rate, T_large = T_large)
+})
 
-# Output the results for large sample
-censoring_results_large <- data.frame(CensoringRate = censoring_rates, LambdaC = lambda_c_values_large)
+# Extract lambda_C and iteration counts
+lambda_c_values_large <- sapply(results, function(res) res$lambda_c)
+iteration_counts <- sapply(results, function(res) res$iterations)
+
+# Validate calculated lambda_C values
+validate_censoring_rate <- function(lambda_c, T_large) {
+  C_large <- rexp(length(T_large), rate = lambda_c)
+  return(mean(C_large < T_large))
+}
+
+# Validate censoring rates for each lambda_C
+validated_rates <- sapply(lambda_c_values_large, validate_censoring_rate, T_large = T_large)
+
+# Create a data frame to summarize results
+censoring_results_large <- data.frame(
+  CensoringRate = censoring_rates,
+  LambdaC = lambda_c_values_large,
+  Iterations = iteration_counts,
+  ValidatedCensoringRate = validated_rates,
+  Difference = censoring_rates - validated_rates
+)
+
+# Print the results
 print(censoring_results_large)
 ```
+
 
 ### 결과 테이블 구조:
 1. **CensoringRate (검열 비율):** \(C < T\) (검열된 경우)로 관찰되는 데이터의 비율. 
   - e.g., Censoring rate이 0.10이면 전체 데이터의 10%가 censoring.
 2. **LambdaC:** Censoring rate을 달성하기 위해 \(C \sim \text{Exp}(\lambda_C)\)에서 사용된 \(\lambda_C\) 값. \(\lambda_C\)는 censoring time이 얼마나 빠르게 감소하는지를 결정
+3. **Iterations:** 수렴하기까지의 실제 반복수 (max_itertion을 100에서 200으로 수정하여 CensoringRate이 0.99인 경우에 대해 더 정확한 값을 찾음)
 
 ---
 
 ### 해석:
-- 검열 비율이 낮을수록 (\(10\%\)) \(\lambda_C\) 값이 작다 (0.04364328). 이는 censoring time이 길어져 대부분의 \(T\) 값이 관측된다는 의미
-- 검열 비율이 높을수록 (\(99\%\)) \(\lambda_C\) 값이 크다 (14.09668373). 이는 censoring time이 짧아 \(T\) 값이 거의 관측되지 않고 censoring되는 경우가 대부분이라는 의미
+- 검열 비율이 낮을수록 (\(10\%\)) \(\lambda_C\) 값이 작다 (0.04348288). 이는 censoring time이 길어져 대부분의 \(T\) 값이 관측된다는 의미
+- 검열 비율이 높을수록 (\(99\%\)) \(\lambda_C\) 값이 크다 (15.92681178). 이는 censoring time이 짧아 \(T\) 값이 거의 관측되지 않고 censoring되는 경우가 대부분이라는 의미
 - 각 \(\lambda_C\) 값은 시뮬레이션에서 특정 censoring rate을 달성하기 위해 \(C \sim \text{Exp}(\lambda_C)\)로 설정된 값을 나타냄.
 
 ---
@@ -232,45 +265,33 @@ print(censoring_results_large)
 
 추가적으로, 높은 censoring rate에서 추정량의 정확도가 어떻게 변하는지 분석하면서 모델 성능을 평가할 수 있다. 이는 censoring rate이 높아질수록 정보 손실이 증가하기 때문.
 
+
 ### (d) Model Performance under Different Censoring Rates - n=30,000
 ```{r}
-# Simulation parameters
-n <- 30000  # Sample size for all variables
-num_simulations <- 100  # Number of simulations
-censoring_rates <- c(0.10, 0.30, 0.90, 0.95, 0.99)  # Desired censoring rates
+library(parallel)
 
 # Function to simulate and fit Cox models with censoring
 simulate_with_censoring_fixed <- function(censor_rate_target, num_simulations, n, T, Z1, Z2, W1, W2, lambda_c) {
-  # Initialize matrices to store beta estimates and standard errors
   beta_estimates <- matrix(NA, nrow = num_simulations, ncol = 4)  # Z1, Z2, W1, W2
   se_estimates <- matrix(NA, nrow = num_simulations, ncol = 4)
   
   for (i in 1:num_simulations) {
-    # Step 1: Generate censoring times C
     C <- rexp(n, rate = lambda_c)
-    
-    # Step 2: Calculate observed times X and censoring indicator Delta
     X <- pmin(T, C)
     Delta <- as.numeric(T <= C)
-    
-    # Step 3: Create data frame with observed data
     data <- data.frame(X = X, Delta = Delta, Z1 = Z1, Z2 = Z2, W1 = W1, W2 = W2)
     
-    # Step 4: Fit Cox proportional hazards model
-    cox_model <- coxph(Surv(X, Delta) ~ Z1 + Z2 + W1 + W2, data = data)
+    cox_model <- coxph(Surv(X, Delta) ~ Z1 + Z2 + W1 + W2, data = data, na.action = na.omit)
     
-    # Step 5: Save beta estimates and standard errors
     beta_estimates[i, ] <- cox_model$coefficients
     se_estimates[i, ] <- sqrt(diag(vcov(cox_model)))
   }
   
-  # Step 6: Calculate mean and standard deviation for estimates and standard errors
-  beta_means <- colMeans(beta_estimates)
-  beta_sds <- apply(beta_estimates, 2, sd)
-  se_means <- colMeans(se_estimates)
-  se_sds <- apply(se_estimates, 2, sd)
+  beta_means <- colMeans(beta_estimates, na.rm = TRUE)
+  beta_sds <- apply(beta_estimates, 2, sd, na.rm = TRUE)
+  se_means <- colMeans(se_estimates, na.rm = TRUE)
+  se_sds <- apply(se_estimates, 2, sd, na.rm = TRUE)
   
-  # Return results
   return(list(
     beta_means = beta_means,
     beta_sds = beta_sds,
@@ -279,18 +300,17 @@ simulate_with_censoring_fixed <- function(censor_rate_target, num_simulations, n
   ))
 }
 
+# Ensure T is precomputed
+lambda_t <- exp(beta1 * Z1 + beta2 * W1 + beta3 * W2)
+u <- runif(n, 0, 1)
+T <- (-log(1 - u) / (lambda_t * rho))^(1 / gamma)
 
-# From (c)
-lambda_c_values <- censoring_results_large$'LambdaC'
-censoring_rates <- c(0.10, 0.30, 0.90, 0.95, 0.99)
-
-# Iterate over censoring rates and simulate
-results <- list()
-for (i in seq_along(censoring_rates)) {
+# Parallel simulation for each censoring rate
+results_parallel <- mclapply(seq_along(censoring_rates), function(i) {
   rate <- censoring_rates[i]
-  lambda_c <- lambda_c_values[i]  # Use (c)'s precomputed lambda_c
-
-  results[[as.character(rate)]] <- simulate_with_censoring_fixed(
+  lambda_c <- lambda_c_values_large[i]
+  
+  simulate_with_censoring_fixed(
     censor_rate_target = rate,
     num_simulations = num_simulations,
     n = n,
@@ -301,147 +321,113 @@ for (i in seq_along(censoring_rates)) {
     W2 = W2,
     lambda_c = lambda_c
   )
-}
+}, mc.cores = detectCores())
+
+# Convert results to proper list structure if necessary
+results_parallel <- lapply(results_parallel, function(res) {
+  if (!is.list(res)) {
+    stop("Unexpected structure in results. Each result should be a list.")
+  }
+  res
+})
+
+# Summarize results
+summary_results <- data.frame(
+  CensoringRate = rep(censoring_rates, each = 4),
+  Parameter = rep(c("Z1", "Z2", "W1", "W2"), times = length(censoring_rates)),
+  BetaMean = unlist(lapply(results_parallel, function(x) x$beta_means)),
+  BetaSD = unlist(lapply(results_parallel, function(x) x$beta_sds)),
+  SEMean = unlist(lapply(results_parallel, function(x) x$se_means)),
+  SESD = unlist(lapply(results_parallel, function(x) x$se_sds))
+)
 
 # Print results
-for (rate in censoring_rates) {
-  cat("Results for Censoring Rate:", rate, "\n")
-  print(results[[as.character(rate)]])
-  cat("\n")
-}
+print(summary_results)
 
 ```
 
+
 ### (d) Model Performance under Different Censoring Rates - n=10,000,000
 ```{r}
-# Generate large Z1, Z2, W1, W2
-# set.seed(42)
-# z_values_large <- mvrnorm(n = n_large, mu = c(0, 0), Sigma = matrix(c(1, 0.75, 0.75, 1), 2))
-# Z1_large <- z_values_large[, 1]
-# Z2_large <- z_values_large[, 2]
-# W1_large <- rnorm(n_large, mean = 0, sd = 1)
-# W2_large <- rbinom(n_large, size = 1, prob = 0.5)
-# 
-# # Function to perform simulations with censoring
-# simulate_with_censoring_fixed <- function(censor_rate_target, num_simulations, n_large, T_large, Z1_large, Z2_large, W1_large, W2_large, lambda_c) {
-#   # Initialize matrices to store estimates and standard errors
-#   beta_estimates <- matrix(NA, nrow = num_simulations, ncol = 4)  # Z1, Z2, W1, W2
-#   se_estimates <- matrix(NA, nrow = num_simulations, ncol = 4)
-#   
-#   for (i in 1:num_simulations) {
-#     # Step 1: Generate censoring times C
-#     C_large <- rexp(n_large, rate = lambda_c)
-#     
-#     # Step 2: Calculate observed times X and censoring indicator Delta
-#     X_large <- pmin(T_large, C_large)
-#     Delta_large <- as.numeric(T_large <= C_large)
-#     
-#     # Step 3: Create data frame with observed data
-#     data_large <- data.frame(X = X_large, Delta = Delta_large, Z1 = Z1_large, Z2 = Z2_large, W1 = W1_large, W2 = W2_large)
-#     
-#     # Step 4: Fit Cox model using observed data
-#     cox_model <- coxph(Surv(X, Delta) ~ Z1 + Z2 + W1 + W2, data = data_large)
-#     
-#     # Step 5: Save estimates and standard errors
-#     beta_estimates[i, ] <- cox_model$coefficients
-#     se_estimates[i, ] <- sqrt(diag(vcov(cox_model)))
-#   }
-#   
-#   # Step 6: Calculate means and standard deviations
-#   beta_means <- colMeans(beta_estimates)
-#   beta_sds <- apply(beta_estimates, 2, sd)
-#   se_means <- colMeans(se_estimates)
-#   se_sds <- apply(se_estimates, 2, sd)
-#   
-#   # Return results as a list
-#   return(list(
-#     beta_means = beta_means,
-#     beta_sds = beta_sds,
-#     se_means = se_means,
-#     se_sds = se_sds
-#   ))
-# }
-# 
-# # Iterate over censoring rates and simulate
-# results_fixed <- list()
-# for (rate in censoring_rates) {
-#   lambda_c <- lambda_c_values_large[which(censoring_rates == rate)]
-#   
-#   results_fixed[[as.character(rate)]] <- simulate_with_censoring_fixed(
-#     censor_rate_target = rate,
-#     num_simulations = num_simulations,
-#     n_large = n_large,
-#     T_large = T_large,
-#     Z1_large = Z1_large,
-#     Z2_large = Z2_large,
-#     W1_large = W1_large,
-#     W2_large = W2_large,
-#     lambda_c = lambda_c
-#   )
-# }
-# 
-# # Print results for each censoring rate
-# for (rate in censoring_rates) {
-#   cat("Results for Censoring Rate:", rate, "\n")
-#   print(results_fixed[[as.character(rate)]])
-#   cat("\n")
-# }
+
 ```
 
 ## Part 2.
 
 ### (a): Case-cohort design:
 ```{r}
-# (a) Case-Cohort Sampling and Cox Model Fitting
-case_cohort_sampling <- function(data, subcohort_size = 100) {
-  # Step 1: Identify failures (Delta == 1)
-  failures <- data[data$Delta == 1, ]
-  non_failures <- data[data$Delta == 0, ]
-  
-  # Step 2: Sample the subcohort
-  sampled_non_failures <- non_failures[sample(1:nrow(non_failures), subcohort_size, replace = FALSE), ]
-  
-  # Combine all failures and sampled non-failures
-  subcohort <- rbind(failures, sampled_non_failures)
-  
-  # Calculate weights
-  n_c <- nrow(non_failures)  # Total non-failures in the full cohort
-  n_c_tilde <- nrow(sampled_non_failures)  # Sampled non-failures in subcohort
-  subcohort$weights <- ifelse(subcohort$Delta == 1, 1, n_c / n_c_tilde)  # Assign weights
-  
-  # Fit Cox model with weights
-  cox_model <- coxph(Surv(X, Delta) ~ Z1 + W1 + W2, data = subcohort, weights = weights)
-  
-  # Return results
-  return(list(
-    cox_model = cox_model,
-    subcohort_size = nrow(subcohort),
-    failures_count = nrow(failures)
-  ))
-}
+# Censoring rate 0.99에 대한 데이터 생성 및 시뮬레이션
+lambda_c_99 <- 15.92681178  # Censoring rate 0.99에 대응하는 lambda_c 값
+num_simulations <- 2000
+datasets_censor_0.99 <- list()
+for (i in 1:num_simulations) {
+  # Covariates Z1, Z2
+  z_values <- mvrnorm(n = n, mu = c(0, 0), Sigma = matrix(c(1, 0.75, 0.75, 1), 2))
+  Z1 <- z_values[, 1]
+  Z2 <- z_values[, 2]
 
-# (a) Simulation for 500 Datasets
-simulate_case_cohort <- function(datasets, subcohort_size = 100) {
+  # Covariates W1, W2
+  W1 <- rnorm(n, mean = 0, sd = 1)
+  W2 <- rbinom(n, size = 1, prob = 0.5)
+
+  # Uniform random variable u for survival times
+  u <- runif(n, min = 0, max = 1)
+
+  # True survival times T
+  lambda_t <- exp(log(2) * Z1 + log(2) * W1 - 1 * W2)  # Coefficients based on original settings
+  T <- (-log(1 - u) / (lambda_t * 0.5))^(1 / 1.5)
+
+  # Censoring times C
+  C <- rexp(n, rate = lambda_c_99)
+
+  # Observed times and censoring indicator
+  X <- pmin(T, C)
+  Delta <- as.numeric(T <= C)
+
+  # Dataframe creation
+  datasets_censor_0.99[[i]] <- data.frame(X = X, Delta = Delta, Z1 = Z1, Z2 = Z2, W1 = W1, W2 = W2)
+}
+```
+
+```{r}
+simulate_case_cohort <- function(datasets, subcohort_size) {
   beta_estimates <- matrix(NA, nrow = length(datasets), ncol = 3)  # For β1, β2, β3
-  subcohort_sizes <- numeric(length(datasets))
-  failures_counts <- numeric(length(datasets))
-  
+  subcohort_sizes <- numeric(length(datasets))  # 실제 서브코호트 크기를 저장
+  failures_counts <- numeric(length(datasets))  # 실패 샘플의 수를 저장
+
   for (i in 1:length(datasets)) {
     data <- datasets[[i]]
-    result <- case_cohort_sampling(data, subcohort_size = subcohort_size)
-    
-    # Save results
-    beta_estimates[i, ] <- result$cox_model$coefficients
-    subcohort_sizes[i] <- result$subcohort_size
-    failures_counts[i] <- result$failures_count
+
+    # Step 1: Identify failures (Delta == 1) and non-failures
+    failures <- data[data$Delta == 1, ]
+    non_failures <- data[data$Delta == 0, ]
+
+    # Step 2: Sample subcohort
+    sampled_non_failures <- non_failures[sample(1:nrow(non_failures), subcohort_size, replace = FALSE), ]
+
+    # Combine failures and sampled non-failures
+    subcohort <- rbind(failures, sampled_non_failures)
+
+    # Calculate weights
+    n_c <- nrow(non_failures)  # Total non-failures in the full cohort
+    n_c_tilde <- nrow(sampled_non_failures)  # Sampled non-failures in subcohort
+    subcohort$weights <- ifelse(subcohort$Delta == 1, 1, n_c / n_c_tilde)  # Assign weights
+
+    # Step 3: Fit Cox model with weights
+    cox_model <- coxph(Surv(X, Delta) ~ Z1 + W1 + W2, data = subcohort, weights = subcohort$weights)
+    beta_estimates[i, ] <- cox_model$coefficients  # Save beta coefficients
+
+    # Save additional statistics
+    subcohort_sizes[i] <- nrow(subcohort)
+    failures_counts[i] <- nrow(failures)
   }
-  
-  # Calculate averages and standard deviations
-  avg_failures <- mean(failures_counts)
-  avg_subcohort_size <- mean(subcohort_sizes)
+
+  # Calculate summary statistics
   beta_means <- colMeans(beta_estimates, na.rm = TRUE)
   beta_sds <- apply(beta_estimates, 2, sd, na.rm = TRUE)
-  
+  avg_failures <- mean(failures_counts)
+  avg_subcohort_size <- mean(subcohort_sizes)
+
   return(list(
     beta_means = beta_means,
     beta_sds = beta_sds,
@@ -449,44 +435,84 @@ simulate_case_cohort <- function(datasets, subcohort_size = 100) {
     avg_subcohort_size = avg_subcohort_size
   ))
 }
-
-# 데이터 생성 (이미 Part 1에서 생성한 데이터 재활용)
-datasets <- list()
-for (i in 1:500) {
-  C <- rexp(n, rate = 0.04364328)  # Using censoring rate 99% (from Part (c))
-  X <- pmin(T, C)
-  Delta <- as.numeric(T <= C)
-  datasets[[i]] <- data.frame(X = X, Delta = Delta, Z1 = Z1, Z2 = Z2, W1 = W1, W2 = W2)
-}
-
-# (a) Case-cohort design with subcohort size 100
-results_100 <- simulate_case_cohort(datasets, subcohort_size = 100)
-
-# (a) Case-cohort design with subcohort size 300
-results_300 <- simulate_case_cohort(datasets, subcohort_size = 300)
-
-# Results for subcohort size 100
-cat("Results for subcohort size 100:\n")
-cat("Average failures:", results_100$avg_failures, "\n")
-cat("Average subcohort size:", results_100$avg_subcohort_size, "\n")
-cat("Beta means:", results_100$beta_means, "\n")
-cat("Beta standard deviations:", results_100$beta_sds, "\n\n")
-
-# Results for subcohort size 300
-cat("Results for subcohort size 300:\n")
-cat("Average failures:", results_300$avg_failures, "\n")
-cat("Average subcohort size:", results_300$avg_subcohort_size, "\n")
-cat("Beta means:", results_300$beta_means, "\n")
-cat("Beta standard deviations:", results_300$beta_sds, "\n")
 ```
 
 
+#### 시뮬레이션 실행 (subcohort_size = 100)
+```{r}
+cat("Running simulation for Censoring Rate: 0.99\n")
+simulation_results_99_100 <- simulate_case_cohort(datasets_censor_0.99, subcohort_size = 100)
+
+# 결과를 데이터프레임으로 정리
+results_summary_99_100 <- data.frame(
+  Parameter = c("Beta1", "Beta2", "Beta3"),
+  Mean_Estimate = simulation_results_99_100$beta_means,
+  SD_Estimate = simulation_results_99_100$beta_sds,
+  Avg_Failures = simulation_results_99_100$avg_failures,
+  Avg_SubcohortSize = simulation_results_99_100$avg_subcohort_size
+)
+
+# 결과 출력
+print(results_summary_99_100)
+```
+
+#### 시뮬레이션 실행 (subcohort_size = 300)
+```{r}
+cat("Running simulation for Censoring Rate: 0.99\n")
+simulation_results_99_300 <- simulate_case_cohort(datasets_censor_0.99, subcohort_size = 300)
+
+# 결과를 데이터프레임으로 정리
+results_summary_99_300 <- data.frame(
+  Parameter = c("Beta1", "Beta2", "Beta3"),
+  Mean_Estimate = simulation_results_99_300$beta_means,
+  SD_Estimate = simulation_results_99_300$beta_sds,
+  Avg_Failures = simulation_results_99_300$avg_failures,
+  Avg_SubcohortSize = simulation_results_99_300$avg_subcohort_size
+)
+
+# 결과 출력
+print(results_summary_99_300)
+```
+
+#### 시뮬레이션 실행 (subcohort_size = 700)
+```{r}
+cat("Running simulation for Censoring Rate: 0.99\n")
+simulation_results_99_700 <- simulate_case_cohort(datasets_censor_0.99, subcohort_size = 700)
+
+# 결과를 데이터프레임으로 정리
+results_summary_99_700 <- data.frame(
+  Parameter = c("Beta1", "Beta2", "Beta3"),
+  Mean_Estimate = simulation_results_99_700$beta_means,
+  SD_Estimate = simulation_results_99_700$beta_sds,
+  Avg_Failures = simulation_results_99_700$avg_failures,
+  Avg_SubcohortSize = simulation_results_99_700$avg_subcohort_size
+)
+
+# 결과 출력
+print(results_summary_99_700)
+```
+
+#### 시뮬레이션 실행 (subcohort_size = 1200)
+```{r}
+cat("Running simulation for Censoring Rate: 0.99\n")
+simulation_results_99_1200 <- simulate_case_cohort(datasets_censor_0.99, subcohort_size = 1200)
+
+# 결과를 데이터프레임으로 정리
+results_summary_99_1200 <- data.frame(
+  Parameter = c("Beta1", "Beta2", "Beta3"),
+  Mean_Estimate = simulation_results_99_1200$beta_means,
+  SD_Estimate = simulation_results_99_1200$beta_sds,
+  Avg_Failures = simulation_results_99_1200$avg_failures,
+  Avg_SubcohortSize = simulation_results_99_1200$avg_subcohort_size
+)
+
+# 결과 출력
+print(results_summary_99_1200)
+```
 
 ### (b): Nested case-cohort design:
 ```{r}
-library(parallel)
-library(survival)
-
+# Nested Case-Control Sampling
 nested_case_control_sampling <- function(data, control_size = 1) {
   failures <- data[data$Delta == 1, ]
   non_failures <- data[data$Delta == 0, ]
@@ -498,16 +524,22 @@ nested_case_control_sampling <- function(data, control_size = 1) {
   
   for (i in 1:nrow(failures)) {
     failure_time <- failures$X[i]
-    
-    # Use binary search for efficient at-risk filtering
     at_risk_controls <- non_failures[non_failures$X > failure_time, ]
+    
     if (nrow(at_risk_controls) >= control_size) {
       sampled_controls <- at_risk_controls[sample(1:nrow(at_risk_controls), control_size, replace = FALSE), ]
-      nested_data <- rbind(nested_data, sampled_controls)
+    } else {
+      sampled_controls <- at_risk_controls
     }
+    nested_data <- rbind(nested_data, sampled_controls)
   }
   
-  cox_model <- coxph(Surv(X, Delta) ~ Z1 + W1 + W2, data = nested_data)
+  cox_model <- tryCatch({
+    coxph(Surv(X, Delta) ~ Z1 + W1 + W2, data = nested_data)
+  }, error = function(e) {
+    message("Error in Cox model fitting: ", e)
+    return(NULL)
+  })
   
   return(list(
     cox_model = cox_model,
@@ -516,7 +548,9 @@ nested_case_control_sampling <- function(data, control_size = 1) {
   ))
 }
 
+# Simulate Nested Case-Control in Parallel
 simulate_nested_case_control_parallel <- function(datasets, control_size = 1, cores = 4) {
+  # Create a cluster for parallel processing
   cl <- makeCluster(cores)
   
   # Load required library on each node
@@ -525,18 +559,27 @@ simulate_nested_case_control_parallel <- function(datasets, control_size = 1, co
   # Export all necessary variables and functions to the cluster
   clusterExport(cl, varlist = c("nested_case_control_sampling", "control_size"), envir = environment())
   
+  # Run parallel computation
   results <- parLapply(cl, datasets, function(data) {
     nested_case_control_sampling(data, control_size = control_size)
   })
   
+  # Stop the cluster
   stopCluster(cl)
   
-  beta_estimates <- do.call(rbind, lapply(results, function(res) res$cox_model$coefficients))
+  # Process results
+  beta_estimates <- do.call(rbind, lapply(results, function(res) {
+    if (!is.null(res$cox_model)) {
+      res$cox_model$coefficients
+    } else {
+      c(NA, NA, NA)
+    }
+  }))
   nested_sizes <- sapply(results, function(res) res$nested_size)
   failures_counts <- sapply(results, function(res) res$failures_count)
   
-  avg_failures <- mean(failures_counts)
-  avg_nested_size <- mean(nested_sizes)
+  avg_failures <- mean(failures_counts, na.rm = TRUE)
+  avg_nested_size <- mean(nested_sizes, na.rm = TRUE)
   beta_means <- colMeans(beta_estimates, na.rm = TRUE)
   beta_sds <- apply(beta_estimates, 2, sd, na.rm = TRUE)
   
@@ -549,161 +592,203 @@ simulate_nested_case_control_parallel <- function(datasets, control_size = 1, co
 }
 
 # 병렬 처리로 실행
-results_control_1 <- simulate_nested_case_control_parallel(datasets, control_size = 1, cores = 4)
-results_control_5 <- simulate_nested_case_control_parallel(datasets, control_size = 5, cores = 4)
+cat("Running simulation for control size 1...\n")
+results_control_1 <- simulate_nested_case_control_parallel(datasets_censor_0.99, control_size = 1, cores = 4)
 
-# 결과 출력
-cat("Results for control size 1:\n")
-cat("Average failures:", results_control_1$avg_failures, "\n")
-cat("Average nested size:", results_control_1$avg_nested_size, "\n")
-cat("Beta means:", results_control_1$beta_means, "\n")
-cat("Beta standard deviations:", results_control_1$beta_sds, "\n\n")
+cat("Running simulation for control size 5...\n")
+results_control_5 <- simulate_nested_case_control_parallel(datasets_censor_0.99, control_size = 5, cores = 4)
 
-cat("Results for control size 5:\n")
-cat("Average failures:", results_control_5$avg_failures, "\n")
-cat("Average nested size:", results_control_5$avg_nested_size, "\n")
-cat("Beta means:", results_control_5$beta_means, "\n")
-cat("Beta standard deviations:", results_control_5$beta_sds, "\n")
-
+# 결과 요약 데이터프레임
+results_summary <- data.frame(
+  ControlSize = c(1, 5),
+  AvgFailures = c(results_control_1$avg_failures, results_control_5$avg_failures),
+  AvgNestedSize = c(results_control_1$avg_nested_size, results_control_5$avg_nested_size),
+  BetaMean_B1 = c(results_control_1$beta_means[1], results_control_5$beta_means[1]),
+  BetaMean_B2 = c(results_control_1$beta_means[2], results_control_5$beta_means[2]),
+  BetaMean_B3 = c(results_control_1$beta_means[3], results_control_5$beta_means[3]),
+  BetaSD_B1 = c(results_control_1$beta_sds[1], results_control_5$beta_sds[1]),
+  BetaSD_B2 = c(results_control_1$beta_sds[2], results_control_5$beta_sds[2]),
+  BetaSD_B3 = c(results_control_1$beta_sds[3], results_control_5$beta_sds[3])
+)
+print(results_summary)
 ```
 
-## Part 3: End-Point Sampling
+## Part 3-1: End-Point Sampling (Naive)
 ```{r}
-datasets <- list()
-for (i in 1:500) {
-  C <- rexp(n, rate = 0.04364328)  # Using censoring rate 99% (from Part (c))
-  X <- pmin(T, C)
-  Delta <- as.numeric(T <= C)
-  datasets[[i]] <- data.frame(X = X, Delta = Delta, Z1 = Z1, Z2 = Z2, W1 = W1, W2 = W2)
-}
-```
-
-```{r}
-# End-point Sampling Function
-end_point_sampling <- function(data, control_sample_size = 100) {
-  # Step 1: Identify cases and controls
-  cases <- data[data$Delta == 1, ]  # Case 데이터
-  controls <- data[data$Delta == 0, ]  # Control 데이터
+# End-Point Sampling 함수
+end_point_sampling_naive <- function(data, sample_size) {
+  # Step 1: Identify failures and non-failures
+  failures <- data[data$Delta == 1, ]
+  non_failures <- data[data$Delta == 0, ]
   
-  # Step 2: Sort controls by censoring time (X) in descending order
-  controls_sorted <- controls[order(controls$X, decreasing = TRUE), ]
+  # Step 2: Sort non-failures by observed time in descending order
+  non_failures <- non_failures[order(-non_failures$X), ]
   
-  # Step 3: Select top control_sample_size controls
-  sampled_controls <- head(controls_sorted, control_sample_size)
+  # Step 3: Select all failures and the top-k non-failures
+  sampled_non_failures <- non_failures[1:min(sample_size, nrow(non_failures)), ]
+  sampled_data <- rbind(failures, sampled_non_failures)
   
-  # Combine cases and sampled controls
-  sampled_data <- rbind(cases, sampled_controls)
-  
-  # Return the sampled data
   return(sampled_data)
 }
 
-# Function to fit Cox model with end-point sampling
-simulate_end_point_sampling <- function(datasets, control_sample_size = 100) {
+# End-Point Sampling Simulation 함수
+simulate_end_point_naive <- function(datasets, sample_size) {
   beta_estimates <- matrix(NA, nrow = length(datasets), ncol = 3)  # For β1, β2, β3
-  case_counts <- numeric(length(datasets))
-  control_counts <- numeric(length(datasets))
   
   for (i in 1:length(datasets)) {
     data <- datasets[[i]]
     
-    # Perform End-point Sampling
-    sampled_data <- end_point_sampling(data, control_sample_size = control_sample_size)
+    # Apply End-Point Sampling
+    sampled_data <- end_point_sampling_naive(data, sample_size)
     
-    # Fit Cox model using sampled data
+    # Fit Cox model
     cox_model <- coxph(Surv(X, Delta) ~ Z1 + W1 + W2, data = sampled_data)
-    
-    # Save beta estimates
     beta_estimates[i, ] <- cox_model$coefficients
-    
-    # Save case and control counts
-    case_counts[i] <- nrow(sampled_data[sampled_data$Delta == 1, ])
-    control_counts[i] <- nrow(sampled_data[sampled_data$Delta == 0, ])
   }
   
-  # Calculate summary statistics
+  # Calculate mean and standard deviation of beta estimates
   beta_means <- colMeans(beta_estimates, na.rm = TRUE)
   beta_sds <- apply(beta_estimates, 2, sd, na.rm = TRUE)
-  avg_case_count <- mean(case_counts)
-  avg_control_count <- mean(control_counts)
   
-  return(list(
-    beta_means = beta_means,
-    beta_sds = beta_sds,
-    avg_case_count = avg_case_count,
-    avg_control_count = avg_control_count
-  ))
+  return(list(beta_means = beta_means, beta_sds = beta_sds))
 }
-
-# Example usage with generated datasets
-results_end_point_100 <- simulate_end_point_sampling(datasets, control_sample_size = 100)
-results_end_point_300 <- simulate_end_point_sampling(datasets, control_sample_size = 300)
-results_end_point_500 <- simulate_end_point_sampling(datasets, control_sample_size = 500)
-results_end_point_1000 <- simulate_end_point_sampling(datasets, control_sample_size = 1000)
-
-# Print results for control sample size 100
-cat("Results for End-point Sampling (Control Sample Size = 100):\n")
-cat("Average case count:", results_end_point_100$avg_case_count, "\n")
-cat("Average control count:", results_end_point_100$avg_control_count, "\n")
-cat("Beta means:", results_end_point_100$beta_means, "\n")
-cat("Beta standard deviations:", results_end_point_100$beta_sds, "\n\n")
-
-# Print results for control sample size 300
-cat("Results for End-point Sampling (Control Sample Size = 300):\n")
-cat("Average case count:", results_end_point_300$avg_case_count, "\n")
-cat("Average control count:", results_end_point_300$avg_control_count, "\n")
-cat("Beta means:", results_end_point_300$beta_means, "\n")
-cat("Beta standard deviations:", results_end_point_300$beta_sds, "\n")
-
-# Print results for control sample size 500
-cat("Results for End-point Sampling (Control Sample Size = 500):\n")
-cat("Average case count:", results_end_point_500$avg_case_count, "\n")
-cat("Average control count:", results_end_point_500$avg_control_count, "\n")
-cat("Beta means:", results_end_point_500$beta_means, "\n")
-cat("Beta standard deviations:", results_end_point_500$beta_sds, "\n")
-
-# Print results for control sample size 1000
-cat("Results for End-point Sampling (Control Sample Size = 1000):\n")
-cat("Average case count:", results_end_point_1000$avg_case_count, "\n")
-cat("Average control count:", results_end_point_1000$avg_control_count, "\n")
-cat("Beta means:", results_end_point_1000$beta_means, "\n")
-cat("Beta standard deviations:", results_end_point_1000$beta_sds, "\n")
 ```
 
-#### 3000번
+### 시뮬레이션 실행 (End-Point Sampling, sample_size = 1500)
 ```{r}
-datasets <- list()
-for (i in 1:3000) {
-  C <- rexp(n, rate = 0.04364328)  # Using censoring rate 99% (from Part (c))
-  X <- pmin(T, C)
-  Delta <- as.numeric(T <= C)
-  datasets[[i]] <- data.frame(X = X, Delta = Delta, Z1 = Z1, Z2 = Z2, W1 = W1, W2 = W2)
+# 시뮬레이션 실행 (End-Point Sampling, sample_size = 1500)
+cat("Running End-Point Sampling for Censoring Rate: 0.99 (Sample Size: 1529)\n")
+simulation_results_end_point_1500 <- simulate_end_point_naive(datasets_censor_0.99, sample_size = 1529)
+
+# 결과를 데이터프레임으로 정리
+results_summary_end_point_1500 <- data.frame(
+  Parameter = c("Beta1", "Beta2", "Beta3"),
+  Mean_Estimate = simulation_results_end_point_1500$beta_means,
+  SD_Estimate = simulation_results_end_point_1500$beta_sds
+)
+
+# 결과 출력
+print(results_summary_end_point_1500)
+```
+
+## Part 3-2: End-Point Sampling (Weight)
+```{r}
+# p(y) 정의: 관측된 Y에 대한 증가 함수
+# compute_py <- function(y) {
+#   return(min(1, 0.7 * y**2))
+# }
+
+# compute_py <- function(y) {
+#   return(0.7 * y**2)
+# }
+
+compute_py <- function(y) {
+  return(min(1, y))
 }
 
-# Example usage with generated datasets
-results_end_point_100 <- simulate_end_point_sampling(datasets, control_sample_size = 100)
-results_end_point_300 <- simulate_end_point_sampling(datasets, control_sample_size = 300)
+end_point_sampling <- function(data, sample_size) {
+  # Step 1: Identify failures and non-failures
+  failures <- data[data$Delta == 1, ]
+  non_failures <- data[data$Delta == 0, ]
+  
+  # Step 2: Sort non-failures by observed time (descending order)
+  non_failures <- non_failures[order(-non_failures$X), ]
+  
+  # Step 3: Apply p(y) to calculate sampling probabilities
+  non_failures$p_y <- sapply(non_failures$X, compute_py)
+  
+  # Assign default values to failures for missing columns
+  failures$p_y <- 1  # Failures have p_y = 1 since they're always sampled
+  
+  # Step 4: Sample non-failures with probability proportional to p(y)
+  sampled_non_failures <- non_failures[sample(1:nrow(non_failures), 
+                                              size = sample_size, 
+                                              prob = non_failures$p_y, 
+                                              replace = FALSE), ]
+  
+  # Combine failures and sampled non-failures
+  sampled_data <- rbind(failures, sampled_non_failures)
+  
+  # Assign inverse probability weights
+  sampled_data$weights <- ifelse(is.na(sampled_data$p_y), 1, 1 / sampled_data$p_y)
+  
+  return(sampled_data)
+}
 
-# Print results for control sample size 100
-cat("Results for End-point Sampling (Control Sample Size = 100):\n")
-cat("Average case count:", results_end_point_100$avg_case_count, "\n")
-cat("Average control count:", results_end_point_100$avg_control_count, "\n")
-cat("Beta means:", results_end_point_100$beta_means, "\n")
-cat("Beta standard deviations:", results_end_point_100$beta_sds, "\n\n")
 
-# Print results for control sample size 300
-cat("Results for End-point Sampling (Control Sample Size = 300):\n")
-cat("Average case count:", results_end_point_300$avg_case_count, "\n")
-cat("Average control count:", results_end_point_300$avg_control_count, "\n")
-cat("Beta means:", results_end_point_300$beta_means, "\n")
-cat("Beta standard deviations:", results_end_point_300$beta_sds, "\n")
+simulate_end_point <- function(datasets, sample_size) {
+  beta_estimates <- matrix(NA, nrow = length(datasets), ncol = 3)  # For β1, β2, β3
+  
+  for (i in 1:length(datasets)) {
+    data <- datasets[[i]]
+    
+    # Apply End-Point Sampling
+    sampled_data <- end_point_sampling(data, sample_size)
+    
+    # Fit Cox model with weights
+    cox_model <- coxph(Surv(X, Delta) ~ Z1 + W1 + W2, data = sampled_data, weights = sampled_data$weights)
+    beta_estimates[i, ] <- cox_model$coefficients
+  }
+  
+  # Calculate mean and standard deviation of beta estimates
+  beta_means <- colMeans(beta_estimates, na.rm = TRUE)
+  beta_sds <- apply(beta_estimates, 2, sd, na.rm = TRUE)
+  
+  return(list(beta_means = beta_means, beta_sds = beta_sds))
+}
+```
+
+### 시뮬레이션 실행 (End-Point Sampling, sample_size = 1031)
+```{r}
+cat("Running End-Point Sampling for Censoring Rate: 0.99 (Sample Size: 1031)\n")
+simulation_results_end_point_1000 <- simulate_end_point(datasets_censor_0.99, sample_size = 1031)
+
+# 결과를 데이터프레임으로 정리
+results_summary_end_point_1000 <- data.frame(
+  Parameter = c("Beta1", "Beta2", "Beta3"),
+  Mean_Estimate = simulation_results_end_point_1000$beta_means,
+  SD_Estimate = simulation_results_end_point_1000$beta_sds
+)
+
+# 결과 출력
+print(results_summary_end_point_1000)
 ```
 
 
+### 시뮬레이션 실행 (End-Point Sampling, sample_size = 1529)
+```{r}
+cat("Running End-Point Sampling for Censoring Rate: 0.99 (Sample Size: 1529)\n")
+simulation_results_end_point_1500 <- simulate_end_point(datasets_censor_0.99, sample_size = 1529)
 
+# 결과를 데이터프레임으로 정리
+results_summary_end_point_1500 <- data.frame(
+  Parameter = c("Beta1", "Beta2", "Beta3"),
+  Mean_Estimate = simulation_results_end_point_1500$beta_means,
+  SD_Estimate = simulation_results_end_point_1500$beta_sds
+)
 
+# 결과 출력
+print(results_summary_end_point_1500)
+```
 
+### p(y) 변경 $0.7y^2$
+```{r}
+compute_py <- function(y) {
+  return(min(1, 0.7 * y**2))
+}
 
+cat("Running End-Point Sampling for Censoring Rate: 0.99 (Sample Size: 1529)\n")
+simulation_results_end_point_1500_y2 <- simulate_end_point(datasets_censor_0.99, sample_size = 1529)
 
+# 결과를 데이터프레임으로 정리
+results_summary_end_point_1500_y2 <- data.frame(
+  Parameter = c("Beta1", "Beta2", "Beta3"),
+  Mean_Estimate = simulation_results_end_point_1500_y2$beta_means,
+  SD_Estimate = simulation_results_end_point_1500_y2$beta_sds
+)
+
+# 결과 출력
+print(results_summary_end_point_1500_y2)
+```
 
 
