@@ -80,7 +80,7 @@
 
 ## 📈 연구 결과  
 ### Simulation Results  
-- **End-Point Sampling** ($p(y)=\min(1, y)$): 가장 낮은 Bias와 MSE를 달성.  
+- **End-Point Sampling** $p(y)=\min(1, y)$ : 가장 낮은 Bias와 MSE를 달성.  
 - **Case-Cohort Sampling**: 랜덤 선택 특성상 상대적으로 낮은 효율성.  
 
 ### Real Data Results  
