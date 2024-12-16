@@ -65,7 +65,7 @@
 1. **Simulation Analysis**  
    - Weibull 분포 기반 데이터를 생성하여 각 샘플링 방법의 효율성을 평가.  
    - Case-Cohort 및 End-Point Sampling의 성능 비교
-     - 확률적 End-Point Sampling ($p(y) = \min(1, y)$ 및 $p(y) = \min(1, 0.7y^2)$)의 성능 비교.  
+     - 확률적 End-Point Sampling ($p(y) = \min(1, y)$ 및 $p(y) = \min(1, 0.7y^2)$ )의 성능 비교.  
        - Naive End-Point Sampling과의 비교
 
 2. **Real Data Analysis**  
