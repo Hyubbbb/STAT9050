@@ -37,10 +37,10 @@
 │   └── STAT9050_Project_Hyubkim.pdf  
 │  
 ├── rmd/                    # 분석 및 시뮬레이션 코드 (R Markdown)  
-│   ├── STAT9050_Mid_Code_Hyub_Kim.Rmd             # 시뮬레이션 코드(Case-cohort, Nested-Case control, End-Point Sampling)
-│   ├── STAT9050_Mid_Code_Hyub_Kim.html            # 시뮬레이션 HTML 결과
-│   ├── STAT9050_Final_Code_Hyub_Kim_Realdata.Rmd    # Real Data 분석 코드(Case-cohort, End-Point Sampling)
-│   └── STAT9050_Final_Code_Hyub_Kim_Realdata.html   # Real Data 분석 결과  
+│   ├── STAT9050_Mid_Code_Hyub_Kim.Rmd    # 시뮬레이션 코드(Case-cohort, Nested-Case control, End-Point Sampling)
+│   ├── STAT9050_Mid_Code_Hyub_Kim.html   # 시뮬레이션 HTML 결과
+│   ├── STAT9050_Project_Hyubkim.Rmd      # Real Data 분석 코드(Case-cohort, End-Point Sampling)
+│   └── STAT9050_Project_Hyubkim.html     # Real Data 분석 결과  
 │  
 ├── README.md                   # 리드미 파일 (현재 문서)  
 └── STAT9050_Project_SP24.pdf   # 교수님 제공 문서  
